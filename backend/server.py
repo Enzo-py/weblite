@@ -14,7 +14,7 @@ class Server:
 
     async def run(self):
 
-        self.set_up_event_listeners() # See REEDME.md for more details
+        self.set_up_event_listeners() # See README.md for more details
 
         # Start the server properly
         async with self.socket:
