@@ -1,11 +1,7 @@
-const ctx = {
-
-}
-
 function read_message(event) {
     content = JSON.parse(event.data);
     switch (content.type) {
-        case "popup":
+        case "pop-up":
             read_popup_message(content.data);
             break;
         case "toast":
@@ -19,10 +15,17 @@ function read_message(event) {
 }
 
 function read_popup_message(data) {
-    // data
+    console.log("read_popup_message", data);
+    pop_up_confirm(data.content, function() {
+        if (data.callback) {
+            window[data.callback]();
+        }
+    });
 }
 
 function read_toast_message(data) {
     // data
+    console.log("read_toast_message", data);
+    toast(data.type, data.content);
 }
 
