@@ -69,6 +69,7 @@ class Style:
     
 class deprecated:
     """Decorator to mark a function or class as deprecated.
+    *From scikit-learn's utils.deprecation module*.
 
     Issue a warning when the function is called/the class is instantiated and
     adds a warning to the docstring.
@@ -77,7 +78,7 @@ class deprecated:
     and the docstring. Note: to use this with the default value for extra, put
     in an empty of parentheses:
 
-    >>> from sklearn.utils import deprecated
+    >>> from utils.console import deprecated
     >>> deprecated()
     <sklearn.utils.deprecation.deprecated object at ...>
 

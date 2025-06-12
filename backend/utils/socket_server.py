@@ -120,7 +120,7 @@ class ServerSocket:
                 traceback.print_exc()
 
             except Exception as e:
-                warnings.warn(f"Error occurred in {event_type} event: {e}", stacklevel=2)
+                warnings.warn(Style("WARNING", f"Error occurred in {event_type} event: {e}"), stacklevel=2)
                 traceback.print_exc()
 
         # s'il y a des éléments dans listeners_output que l'on doit await, alors les await
@@ -221,9 +221,12 @@ class ServerSocket:
 
     async def broadcast(self, message):
         """Broadcast a message to all connected clients."""
+        if isinstance(message, Message) or issubclass(type(message), Message):
+            message = message.to_json()
+            
         if type(message) is not str:
             print(Style("ERROR", message))
-            raise ValueError("Message must be a string")
+            raise ValueError(f"Message must be a string or a Message object not a {type(message)}")
         if not self.running:
             raise Exception("Server is not running")
         for client in self.clients:
@@ -233,6 +236,10 @@ class ServerSocket:
         """Send a message to a specific client."""
         if not self.running:
             raise Exception("Server is not running")
+        
+        if isinstance(message, Message) or issubclass(type(message), Message):
+            message = message.to_json()
+        
         await client.send(message)
 
     async def wait_for_clients(self, num_clients):
