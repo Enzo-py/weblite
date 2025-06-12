@@ -81,8 +81,10 @@ The frontend will connect to the backend via sockets (e.g., `ws://localhost:5384
 **Address already in use:**
 - Change the socket port or stop the conflicting process.
 
-
+<small>
 *If you encounter any issues, please open an issue on GitHub.*
+</small>
+
 ---
 
 ## Development Tips
