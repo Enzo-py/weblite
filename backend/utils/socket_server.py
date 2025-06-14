@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import json
+import os
 import traceback
 import websockets
 
@@ -82,13 +84,17 @@ class ServerSocket:
             ]
 
     HISTORY_LIMIT = 3
-    def __init__(self, host="127.0.0.1", port=5384, _print=False):
+    def __init__(self, host="127.0.0.1", port=5384, _print=False, upload_dir=os.path.join('backend', 'uploads')):
         self.host = host
         self.port = port
+        self.upload_dir = upload_dir
+        os.makedirs(upload_dir, exist_ok=True)
+        
         self.running = False
         self._print = _print
 
         self._stop_future = None
+        self._uploading_chunks = {}
 
         self.server = None
         self.clients = set()  # To keep track of connected clients
@@ -106,7 +112,7 @@ class ServerSocket:
         if len(self.messages[client.remote_address]) > self.HISTORY_LIMIT:
             self.messages[client.remote_address].pop(0)
 
-        if self._print:
+        if self._print and message.type != 'chunk':
             print("[info]\t\t", Style("INFO", f"Client {client.remote_address}: {message}"))
 
     async def _execute_event(self, event_type, *args):
@@ -154,6 +160,40 @@ class ServerSocket:
                 message = await websocket.recv()
                 message = Message.from_json(message)
 
+                if message.type == 'start_chunked_upload':
+                    if websocket not in self._uploading_chunks:
+                        self._uploading_chunks[websocket] = {'id': None, 'start': None, 'end': None, 'path': None, 'file': None}
+                    else:
+                        print("[server]\t", Style('ERROR', "A client try to send a chunked message when the previous one isn't finish"))
+                        raise EOFError("The previous chunked message never ended (no EOF message)")
+                    
+                    self._uploading_chunks[websocket]['start'] = message
+
+                    self._uploading_chunks[websocket]['path'] = os.path.join(self.upload_dir, *message.asked_folder, f"{message.upload_id}_{message.filename}")
+                    self._uploading_chunks[websocket]['file'] = open(self._uploading_chunks[websocket]['path'], "wb")
+
+                
+                elif message.type == 'chunk':
+                    data = base64.b64decode(message.bin64)
+                    file = self._uploading_chunks[websocket]['file']
+                    if file:
+                        file.write(data)
+                    else:
+                        print("[server]\t", Style('ERROR', 'A client sent a <chunk message> before a <start of chunked message>'))
+                        raise RuntimeError('A client sent a <chunk message> before a <start of chunked message>')
+                    
+                elif message.type == "end_chunked_upload":
+                    file = self._uploading_chunks[websocket]['file']
+                    if file:
+                        file.close()
+                    else:
+                        print("[server]\t", Style('ERROR', 'A client sent a <end of chunked message> before a <start of chunked message>'))
+                        raise RuntimeError('A client sent a <end of chunked message> before a <start of chunked message>')
+                    
+                    del self._uploading_chunks[websocket]['file']
+                    message.content = self._uploading_chunks.pop(websocket)
+                    
+
                 # execute the on_message event
                 await self._execute_event(self.EVENTS_TYPES.on_message, websocket, message)
 
@@ -168,6 +208,7 @@ class ServerSocket:
 
                 self._update_history(websocket, message)
                 self.clients.remove(websocket)
+                if websocket in self._uploading_chunks: del self._uploading_chunks[websocket]
 
                 if self._print:
                     print("[network]\t", Style("SECONDARY_WARNING", f"Client disconnected: {websocket.remote_address}"))
@@ -304,19 +345,3 @@ class ServerSocket:
             finally:
                 await self.stop()
         return wrapper
-
-async def main():
-    SERVER = ServerSocket(_print=True)
-    await SERVER.start()
-
-    SERVER.on(ServerSocket.EVENTS_TYPES.on_client_connect, "hellow", lambda client: print(f"Client connected"))
-
-    await SERVER.wait_for_clients(1)
-
-    await asyncio.sleep(1)
-    await SERVER.broadcast(json.dumps({"type": "message", "data": {"message": "Hello, clients!"}}))
-    await SERVER.broadcast(PopUp("Hello, clients!").to_json())
-    await SERVER.stop()
-
-if __name__ == "__main__":
-    asyncio.run(main())

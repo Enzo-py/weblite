@@ -1,6 +1,8 @@
 import json
 import warnings
 
+from datetime import datetime
+
 class Message:
     """
         Protocol message class to communicate between the server and the client.
@@ -28,12 +30,37 @@ class Message:
 
         if "type" not in data or "data" not in data:
             # warning in yellow
-            warnings.warn(f"\033[93mInvalid message: {data}\033[0m", stacklevel=2)
-            return Error("Invalid message")
+            warnings.warn(f"\033[93mInvalid message: {data}\033[0m", stacklevel=3)
+            return Error("Invalid message: A message should be compose of a <type> and <data>")
 
         if data["type"] not in TYPES_MAP or TYPES_MAP[data["type"]] == Message:
             return Message(content=data["data"], type=data["type"])
-        return TYPES_MAP[data["type"]].from_json(json_str)
+        
+        return TYPES_MAP[data["type"]].from_json(data)
+    
+class ChunkedMessage:
+    ...
+
+class PartialChunkedMessage(Message):
+    
+    def __init__(self, type, data):
+        super().__init__(content=f'PartialChunkedMessage<{type}>', type=type)
+
+        if self.type == 'start_chunked_upload':
+            self.start_dt = datetime.now()
+            self.upload_id = data['upload_id']
+            self.filename = data['filename']
+            self.total_chunks = data['total_chunks']
+            self.asked_folder = data['folder']
+
+        elif self.type == "chunk":
+            self.upload_id = data['upload_id']
+            self.chunk_index = data['chunk_index']
+            self.bin64 = data['bin64']
+
+    @staticmethod
+    def from_json(data):
+        return PartialChunkedMessage(data["type"], data['data'])
     
 class PopUp(Message):
     def __init__(self, content, callback=None):
@@ -115,6 +142,8 @@ TYPES_MAP = {
     # Fondamental types
     "error": Error,
     "message": Message,
+    "start_chunked_upload": PartialChunkedMessage,
+    "chunk": PartialChunkedMessage,
 
     # Basic types
     "pop-up": PopUp,
