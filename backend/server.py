@@ -23,7 +23,7 @@ class Server:
             await asyncio.sleep(1)
             
             # Remove the greeting event after 1 seconds
-            self.socket.remove_listener(
+            self.socket.off(
                 ServerSocket.EVENTS_TYPES.on_client_connect,
                 "greeting-event"
             )
@@ -78,16 +78,22 @@ class Server:
         This method is deprecated and should not be used.
         """
 
-        await self.socket.start()
+        await self.socket._start()
 
         self.set_up_event_listeners()  # Set up the event listeners
         await self.socket.wait_for_clients(1)
         # Wait for at least one client to connect
         await asyncio.sleep(1)
 
-        self.socket.wait() # Keep the server running
+        await self.socket.broadcast(
+            PopUp(
+                "The greeting event has been removed after 1 seconds."
+            )
+        )
 
-        self.socket.stop() # Stop the server programmatically
+        await self.socket.wait() # Keep the server running
+
+        await self.socket.stop() # Stop the server programmatically
 
 
 if __name__ == "__main__":

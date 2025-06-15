@@ -45,10 +45,10 @@ class ServerSocket:
     >>> server = ServerSocket() # Create a server
 
     --- asynchrone --------------------
-    >>> await server.start() # Start the server
-    >>> await server.wait_for_clients(1) # Wait for a client to connect
-    >>> await server.broadcast("Hello, clients!") # Broadcast a message to all clients
-    >>> await server.stop() # Stop the server
+    >>> async with server: # Start the server
+    >>>     await server.wait_for_clients(1) # Wait for a client to connect
+    >>>     await server.broadcast("Hello, clients!") # Broadcast a message to all clients
+    >>>     await server.wait() # Keep the server running
     """
 
     class EVENTS_TYPES:
@@ -141,7 +141,7 @@ class ServerSocket:
             # Now pass tasks (not raw coroutines) to asyncio.wait
             done, pending = await asyncio.wait(tasks, timeout=3)
 
-    async def handler(self, websocket, path=None):
+    async def _handler(self, websocket, path=None):
         """Register client and manage communication."""
         # Register the client
         self.clients.add(websocket)
@@ -223,14 +223,14 @@ class ServerSocket:
                 self.clients.remove(websocket)
                 break
 
-    async def start(self):
+    async def _start(self):
         """Start the server. Don't forget to `socket.wait()` in order to keep the server alive!"""
         if self.running:
             raise Exception("Server is already running")
         
         self._stop_future = asyncio.get_event_loop().create_future()
         self.running = True
-        self.server = await websockets.serve(self.handler, self.host, self.port)
+        self.server = await websockets.serve(self._handler, self.host, self.port)
         if self._print:
             print("[server]\t", Style("SUCCESS", f"Server started at ws://{self.host}:{self.port}"))
 
@@ -300,7 +300,7 @@ class ServerSocket:
         self._events_listeners[event_type][listener_id] = listener
         return listener_id
     
-    def remove_listener(self, event_type, listener_id):
+    def off(self, event_type, listener_id):
         """Remove an event listener."""
         if event_type not in self._events_listeners:
             raise ValueError(f"Invalid event type: {event_type}")
@@ -311,7 +311,7 @@ class ServerSocket:
         return listener_id
     
     async def __aenter__(self):
-        await self.start()
+        await self._start()
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
