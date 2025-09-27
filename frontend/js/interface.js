@@ -1,33 +1,42 @@
 const socket = new WebSocket("ws://127.0.0.1:5384");
 const socket_data = {last_message: null};
+const { PopUp, Navigator, ContextMenu, EditableText, DataTable, Toast, LoadingScreen } = Toolbox;
+
 
 
 // Interface funcs
-function send_message(type, data='', waiting_screen = false, msg = '') {
-    // console.log("Sending message to server", type, waiting_screen);
+function send_message(type, data = '', waiting_screen = false, msg = '') {
     if (waiting_screen) {
-        d3.select("#loading-screen").style("display", "flex");
-        d3.select("#loading-screen p").text(msg);
+        LoadingScreen.show();  // active simplement l'écran
+        LoadingScreen.update({
+            main_steps: [{ title: msg || "Working...", progress: 0.0, info: "" }],
+            detail: {}
+        });
         waiting_for_response = true;
     }
-    socket.send(JSON.stringify({type: type, data: data}));
+
+    socket.send(JSON.stringify({
+        type: type,
+        data: data
+    }));
 }
 
-function send_file_in_chunks(file, folder=[], chunkSize = 1024 * 64, msg = '', show_loading = true) {
+async function send_file_in_chunks(file, folder = [], chunkSize = 1024 * 64, msg = '', show_loading = true) {
     const totalChunks = Math.ceil(file.size / chunkSize);
     const uploadId = Date.now().toString();
 
     const loading_progress_bar = d3.select("#loading-progress");
 
     if (show_loading) {
-        d3.select("#loading-screen").style("display", "flex")
-        d3.select("#loading-screen p").text(msg || "Uploading...");
-        if (loading_progress_bar) {
-            loading_progress_bar.style('display', 'block')
-            loading_progress_bar.attr('value', 0)
-            loading_progress_bar.attr('max', 100)
-        }
-        waiting_for_response = true;
+        LoadingScreen.show();
+        LoadingScreen.update({
+            main_steps: [{
+                title: msg || "Uploading...",
+                progress: 0.0,
+                info: ""
+            }],
+            detail: {}
+        });
     }
 
     socket.send(JSON.stringify({
@@ -35,60 +44,59 @@ function send_file_in_chunks(file, folder=[], chunkSize = 1024 * 64, msg = '', s
         data: {
             upload_id: uploadId,
             folder: folder,
-            filename: file.name.replaceAll('/', '_').replaceAll('\\', '_'), // mmmm....
+            filename: file.name.replaceAll('/', '_').replaceAll('\\', '_'),
             total_chunks: totalChunks
         }
     }));
 
-    let offset = 0;
-    let chunkIndex = 0;
-
-    function sendNextChunk() {
+    for (let offset = 0, chunkIndex = 0; offset < file.size; offset += chunkSize, chunkIndex++) {
         const chunk = file.slice(offset, offset + chunkSize);
-        const reader = new FileReader();
 
-        reader.onload = function (e) {
-            const arrayBuffer = e.target.result;
-            const uint8Array = new Uint8Array(arrayBuffer);
-            const binaryString = Array.from(uint8Array).map(b => String.fromCharCode(b)).join('');
-            const base64data = btoa(binaryString);
+        const base64data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const uint8Array = new Uint8Array(e.target.result);
+                const binaryString = Array.from(uint8Array).map(b => String.fromCharCode(b)).join('');
+                resolve(btoa(binaryString));
+            };
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(chunk);
+        });
 
-            socket.send(JSON.stringify({
-                type: "chunk",
-                data: {
-                    upload_id: uploadId,
-                    chunk_index: chunkIndex,
-                    bin64: base64data
+        socket.send(JSON.stringify({
+            type: "chunk",
+            data: {
+                upload_id: uploadId,
+                chunk_index: chunkIndex,
+                bin64: base64data
+            }
+        }));
+
+        if (show_loading) {
+            const percent = ((chunkIndex + 1) / totalChunks);
+            LoadingScreen.update({
+                main_steps: [{
+                    title: msg || "Uploading...",
+                    progress: percent,
+                    info: `${Math.round(percent * 100)}%`
+                }],
+                detail: {
+                    uploaded: `${chunkIndex + 1} / ${totalChunks} chunks`
                 }
-            }));
-
-            if (show_loading && loading_progress_bar) {
-                const percent = Math.round(((chunkIndex + 1) / totalChunks) * 100);
-                loading_progress_bar.attr('value', percent)
-            }
-
-            offset += chunkSize;
-            chunkIndex++;
-
-            if (offset < file.size) {
-                setTimeout(sendNextChunk, 0);
-            } else {
-                socket.send(JSON.stringify({
-                    type: "end_chunked_upload",
-                    data: {
-                        upload_id: uploadId
-                    }
-                }));
-                loading_progress_bar.style('display', "none")
-                d3.select("#loading-screen").style("display", "none")
-            }
-        };
-
-        reader.readAsArrayBuffer(chunk);
+            });
+        }
     }
 
-    sendNextChunk();
+    socket.send(JSON.stringify({
+        type: "end_chunked_upload",
+        data: {
+            upload_id: uploadId
+        }
+    }));
+
+    if (show_loading) LoadingScreen.hide()
 }
+
 
 
 async function wait_for_message(type, timeout = -1, only_content = false) {
@@ -145,19 +153,14 @@ socket.onerror = (error) => {
 socket.onmessage = (event) => {
     content = read_message(event);
     socket_data.last_message = content;
-    if (content && content.type == 'error') {
-        toast("error", content.data.message);
-    }
-
     console.log("Received message from server", content);
+
     waiting_for_response = false;
-    d3.select("#loading-screen").style("display", "none");
-    d3.select("#loading-screen p").text("");
 };
 
 socket.onopen = () => {
     
-    d3.select("#loading-screen").style('display', 'none')
+    LoadingScreen.hide()
     
     // Send a message to the server
     // socket.send(JSON.stringify({type: "info", data: { message: "Hello, server!" }}));
@@ -171,6 +174,7 @@ socket.onclose = () => {
             <span style="font-style: italic; color: #888;">Make sure the python (backend) server is running. See README for more informations</span>
         </div>
     `
-    pop_up_showcase(message);
+    // pop_up_showcase(message);
+    PopUp.showcase(message)
     console.log("Disconnected from WebSocket server");
 };
