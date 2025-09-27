@@ -216,7 +216,7 @@ class ServerSocket:
 
             # if error occurs, remove the client
             except Exception as e:
-                message = Error(str(e))
+                message = ErrorMessage(str(e))
                 warnings.warn(Style("ERROR", f"Error occurred: {e}"), stacklevel=2)
                 traceback.print_exc()
                 self._update_history(websocket, message)
@@ -230,7 +230,7 @@ class ServerSocket:
         
         self._stop_future = asyncio.get_event_loop().create_future()
         self.running = True
-        self.server = await websockets.serve(self._handler, self.host, self.port)
+        self.server = await websockets.serve(self._handler, self.host, self.port, ping_timeout=60)
         if self._print:
             print("[server]\t", Style("SUCCESS", f"Server started at ws://{self.host}:{self.port}"))
 
@@ -278,7 +278,12 @@ class ServerSocket:
         if not self.running:
             raise Exception("Server is not running")
         
-        if isinstance(message, Message) or issubclass(type(message), Message):
+        if isinstance(message, ChunkedMessage):
+            for chunk in message.iter_chunks():
+                await client.send(json.dumps(chunk))
+            return
+        
+        elif isinstance(message, Message) or issubclass(type(message), Message):
             message = message.to_json()
         
         await client.send(message)
